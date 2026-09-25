@@ -1,32 +1,25 @@
 """
-raid.py - ระบบทำงานจริง (Core Logic) - FULL VERSION
-ใช้ Discord API v10 ผ่าน requests
-
-⚠️ คำเตือน: การใช้งานผิด Discord ToS ทำให้บัญชีโดนแบนถาวร
+raid.py - ระบบทำงานจริง (Core Logic)
+รับ Token แบบตรงๆ (manual input) ไม่ต้องใช้ไฟล์
 """
 
 import os
 import json
 import time
 import random
-import threading
 import requests
 
-# ==================== Config ====================
 CONFIG_FILE = "config.json"
 
 DEFAULT_CONFIG = {
-    "file": "tokens.txt",
     "name": "X HIGH",
     "text": "Fuck",
     "id": "123456789",
-    "tokens": "0",
+    "tokens": [],       # เก็บ token เป็น list
 }
 
-# ==================== Discord API ====================
 API_BASE = "https://discord.com/api/v10"
 
-# User-Agent ปลอม (Discord บังคับ)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -37,7 +30,6 @@ SUPER_PROPERTIES = "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoi
 
 
 def build_headers(token):
-    """สร้าง headers สำหรับยิง API"""
     return {
         "Authorization": token,
         "Content-Type": "application/json",
@@ -46,7 +38,7 @@ def build_headers(token):
     }
 
 
-# ==================== Config Loader ====================
+# ==================== Config ====================
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -54,7 +46,9 @@ def load_config():
                 data = json.load(f)
                 for k, v in DEFAULT_CONFIG.items():
                     data.setdefault(k, v)
-                data.pop("proxies", None)
+                # ถ้า tokens เก่าเป็น string ให้แปลง
+                if isinstance(data.get("tokens"), str):
+                    data["tokens"] = []
                 return data
         except Exception:
             return DEFAULT_CONFIG.copy()
@@ -69,61 +63,22 @@ def save_config(cfg):
         print(f"[raid.py] เซฟ config ไม่สำเร็จ: {e}")
 
 
-def get_file():
-    return load_config().get("file", "")
-
+# ==================== Get / Set ====================
 def get_name():
     return load_config().get("name", "")
 
+
 def get_text():
     return load_config().get("text", "")
+
 
 def get_id():
     return load_config().get("id", "")
 
 
-# ==================== Token Reader ====================
-def read_tokens(file_path=None):
-    if file_path is None:
-        file_path = get_file()
-    if not file_path or not os.path.exists(file_path):
-        return []
-    tokens = []
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-    except Exception:
-        return []
-    for line in content.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if "," in line:
-            for t in line.split(","):
-                t = t.strip()
-                if t:
-                    tokens.append(t)
-        else:
-            tokens.append(line)
-    return tokens
-
-
-def count_tokens(file_path=None):
-    return len(read_tokens(file_path))
-
-
-def uploade_token(file_path=None):
-    if file_path is None:
-        file_path = get_file()
-    if not file_path or not os.path.exists(file_path):
-        return 0, f"ไม่พบไฟล์: {file_path}"
-    tokens = read_tokens(file_path)
-    count = len(tokens)
-    cfg = load_config()
-    cfg["file"] = file_path
-    cfg["tokens"] = str(count)
-    save_config(cfg)
-    return count, None
+def get_tokens():
+    """คืน list ของ token"""
+    return load_config().get("tokens", [])
 
 
 def set_name(name):
@@ -140,42 +95,77 @@ def set_text(text):
     return cfg["text"]
 
 
-def show_config():
-    return load_config()
-
-
-def reset_config():
-    cfg = DEFAULT_CONFIG.copy()
-    save_config(cfg)
-    return cfg
-
-
-def export_config(path):
+def set_id(gid):
     cfg = load_config()
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=4, ensure_ascii=False)
-    return path
+    cfg["id"] = gid
+    save_config(cfg)
+    return cfg["id"]
 
 
-def import_config(path):
-    if not os.path.exists(path):
-        return None, f"ไม่พบไฟล์: {path}"
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
+# ==================== Token Management ====================
+def add_token(token):
+    """เพิ่ม token (ทีละตัว)"""
+    cfg = load_config()
+    tokens = cfg.get("tokens", [])
+    if token in tokens:
+        return False, "token นี้มีอยู่แล้ว"
+    tokens.append(token)
+    cfg["tokens"] = tokens
+    save_config(cfg)
+    return True, len(tokens)
+
+
+def add_tokens_bulk(text):
+    """
+    เพิ่ม token หลายตัวจาก text
+    รองรับ , และ ขึ้นบรรทัดใหม่
+    """
+    cfg = load_config()
+    tokens = cfg.get("tokens", [])
+    added = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",") if "," in line else [line]
+        for t in parts:
+            t = t.strip()
+            if t and t not in tokens:
+                tokens.append(t)
+                added += 1
+    cfg["tokens"] = tokens
+    save_config(cfg)
+    return added, len(tokens)
+
+
+def remove_token(token):
+    cfg = load_config()
+    tokens = cfg.get("tokens", [])
+    if token in tokens:
+        tokens.remove(token)
+        cfg["tokens"] = tokens
         save_config(cfg)
-        return cfg, None
-    except Exception as e:
-        return None, str(e)
+        return True, len(tokens)
+    return False, len(tokens)
 
 
-def show_id():
-    return load_config().get("id", "")
+def clear_tokens():
+    cfg = load_config()
+    cfg["tokens"] = []
+    save_config(cfg)
+    return 0
 
 
-# ==================== Helper: ตรวจสอบ token ====================
+def count_tokens():
+    return len(get_tokens())
+
+
+def list_tokens():
+    return get_tokens()
+
+
+# ==================== ตรวจสอบ token ====================
 def check_token_valid(token):
-    """ตรวจว่า token ใช้ได้ไหม คืน (True, user_info) หรือ (False, error)"""
     try:
         r = requests.get(f"{API_BASE}/users/@me", headers=build_headers(token), timeout=10)
         if r.status_code == 200:
@@ -192,18 +182,11 @@ def check_token_valid(token):
 
 # ==================== [ 4 ] Token Raid ====================
 def token_raid(guide_id=None):
-    """
-    เริ่ม Token Raid จริง:
-    1. ดึง token จาก config
-    2. ตรวจสอบว่า token ใช้ได้ไหม
-    3. ส่งข้อความไปยัง channel ที่ระบุ (guide_id = channel_id)
-    """
     cfg = load_config()
-    file_path = cfg.get("file", "")
     name = cfg.get("name", "")
     text = cfg.get("text", "")
     channel_id = guide_id if guide_id else cfg.get("id", "")
-    tokens = read_tokens(file_path)
+    tokens = cfg.get("tokens", [])
 
     if not tokens:
         return {"status": "error", "message": "ไม่มี token", "total": 0, "success": 0, "failed": 0}
@@ -214,7 +197,6 @@ def token_raid(guide_id=None):
     results = []
     for tk in tokens:
         try:
-            # ส่งข้อความ
             r = requests.post(
                 f"{API_BASE}/channels/{channel_id}/messages",
                 headers=build_headers(tk),
@@ -227,7 +209,7 @@ def token_raid(guide_id=None):
                 results.append({"token": tk[:20] + "...", "status": f"HTTP {r.status_code}"})
         except Exception as e:
             results.append({"token": tk[:20] + "...", "status": str(e)})
-        time.sleep(0.5)  # หน่วง กัน rate limit
+        time.sleep(0.5)
 
     success = sum(1 for r in results if r["status"] == "ok")
     failed = len(results) - success
@@ -246,12 +228,7 @@ def token_raid(guide_id=None):
 
 # ==================== [ 11 ] Onliner ====================
 def onliner():
-    """
-    ทำให้ token ออนไลน์ถาวร
-    ใช้ WebSocket gateway - ต้องมี lib เพิ่ม
-    แต่ใช้วิธี lightweight: ping API /users/@me ทุก 30 วิ
-    """
-    tokens = read_tokens()
+    tokens = get_tokens()
     if not tokens:
         return {"action": "onliner", "status": "error", "message": "ไม่มี token"}
 
@@ -273,16 +250,8 @@ def onliner():
 
 # ==================== [ 12 ] Voice Raper ====================
 def voice_raper():
-    """
-    เข้า voice channel พร้อมกัน
-    ต้องรู้ guild_id + channel_id
-    ใช้ API /guilds/{guild}/channels/{channel}/voice - ต้องใช้ WebSocket จริง
-    เวอร์ชันนี้ใช้ REST join (จะได้ session แต่ไม่ค้าง)
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    channel_id = cfg.get("id", "")
-
+    tokens = get_tokens()
+    channel_id = get_id()
     if not tokens:
         return {"action": "voice_raper", "status": "error", "message": "ไม่มี token"}
     if not channel_id:
@@ -307,15 +276,9 @@ def voice_raper():
 
 # ==================== [ 13 ] Change Nick ====================
 def change_nick():
-    """
-    เปลี่ยนชื่อเล่นในเซิร์ฟเวอร์
-    ใช้ guild_id จาก config.id
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    guild_id = cfg.get("id", "")
-    new_name = cfg.get("name", "X HIGH")
-
+    tokens = get_tokens()
+    guild_id = get_id()
+    new_name = get_name()
     if not tokens:
         return {"action": "change_nick", "status": "error", "message": "ไม่มี token"}
     if not guild_id:
@@ -324,12 +287,10 @@ def change_nick():
     results = []
     for tk in tokens:
         try:
-            # ต้องรู้ user_id ของ token นี้ก่อน
             ok, info = check_token_valid(tk)
             if not ok:
                 results.append({"token": tk[:20] + "...", "status": "invalid token"})
                 continue
-
             user_id = info.get("id")
             r = requests.patch(
                 f"{API_BASE}/guilds/{guild_id}/members/{user_id}",
@@ -347,14 +308,9 @@ def change_nick():
 
 # ==================== [ 14 ] Thread Spammer ====================
 def thread_spammer():
-    """
-    สร้าง thread ใน channel รัวๆ
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    channel_id = cfg.get("id", "")
-    name = cfg.get("name", "thread")
-
+    tokens = get_tokens()
+    channel_id = get_id()
+    name = get_name()
     if not tokens:
         return {"action": "thread_spammer", "status": "error", "message": "ไม่มี token"}
     if not channel_id:
@@ -379,14 +335,8 @@ def thread_spammer():
 
 # ==================== [ 15 ] Typer ====================
 def typer():
-    """
-    ทำให้ token แสดงสถานะ typing ใน channel
-    ใช้ POST /channels/{id}/typing
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    channel_id = cfg.get("id", "")
-
+    tokens = get_tokens()
+    channel_id = get_id()
     if not tokens or not channel_id:
         return {"action": "typer", "status": "error", "message": "ไม่มี token/channel"}
 
@@ -408,15 +358,8 @@ def typer():
 
 # ==================== [ 16 ] Call Spammer ====================
 def call_spammer():
-    """
-    เปิด/ปิด call ใน DM หรือ group
-    ⚠️ ใช้ API เสียง - ต้องใช้ WebSocket จริง
-    เวอร์ชันนี้ส่ง ring ผ่าน API
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    channel_id = cfg.get("id", "")
-
+    tokens = get_tokens()
+    channel_id = get_id()
     if not tokens or not channel_id:
         return {"action": "call_spammer", "status": "error", "message": "ไม่มี token/channel"}
 
@@ -439,12 +382,8 @@ def call_spammer():
 
 # ==================== [ 17 ] Bio Change ====================
 def bio_change():
-    """
-    เปลี่ยน bio ของ user
-    """
-    tokens = read_tokens()
-    new_bio = load_config().get("text", "")
-
+    tokens = get_tokens()
+    new_bio = get_text()
     if not tokens:
         return {"action": "bio_change", "status": "error", "message": "ไม่มี token"}
 
@@ -467,13 +406,8 @@ def bio_change():
 
 # ==================== [ 18 ] Voice Joiner ====================
 def voice_joiner():
-    """
-    เข้า voice channel ผ่าน invite
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    invite_code = cfg.get("id", "")
-
+    tokens = get_tokens()
+    invite_code = get_id()
     if not tokens or not invite_code:
         return {"action": "voice_joiner", "status": "error", "message": "ไม่มี token/invite"}
 
@@ -495,12 +429,8 @@ def voice_joiner():
 
 # ==================== [ 19 ] Onboard Bypass ====================
 def onboard_bypass():
-    """
-    ข้าม onboarding ของเซิร์ฟเวอร์
-    """
-    tokens = read_tokens()
-    guild_id = load_config().get("id", "")
-
+    tokens = get_tokens()
+    guild_id = get_id()
     if not tokens or not guild_id:
         return {"action": "onboard_bypass", "status": "error", "message": "ไม่มี token/guild"}
 
@@ -523,23 +453,15 @@ def onboard_bypass():
 
 # ==================== [ 20 ] Dm Spammer ====================
 def dm_spammer():
-    """
-    ส่ง DM รัวๆ ไปยัง user
-    ต้องรู้ user_id ปลายทาง (ใช้ config.id)
-    """
-    tokens = read_tokens()
-    cfg = load_config()
-    target_id = cfg.get("id", "")
-    text = cfg.get("text", "")
-
+    tokens = get_tokens()
+    target_id = get_id()
+    text = get_text()
     if not tokens or not target_id:
         return {"action": "dm_spammer", "status": "error", "message": "ไม่มี token/target"}
 
-    # สร้าง DM channel ก่อน
     results = []
     for tk in tokens:
         try:
-            # เปิด DM
             r1 = requests.post(
                 f"{API_BASE}/users/@me/channels",
                 headers=build_headers(tk),
@@ -549,10 +471,7 @@ def dm_spammer():
             if r1.status_code != 200:
                 results.append({"token": tk[:20] + "...", "status": f"open dm: {r1.status_code}"})
                 continue
-
             dm_id = r1.json().get("id")
-
-            # ส่งข้อความ
             r2 = requests.post(
                 f"{API_BASE}/channels/{dm_id}/messages",
                 headers=build_headers(tk),
