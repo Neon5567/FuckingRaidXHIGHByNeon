@@ -6,7 +6,6 @@ import re
 import shutil
 import raid
 
-# เปิด ANSI บน Windows
 if os.name == 'nt':
     os.system('')
 
@@ -86,16 +85,16 @@ NYA_ART = [
 ]
 
 MENU = [
-    ("1",  "Uploade Token"),
+    ("1",  "Add Token"),
     ("2",  "Set Name"),
     ("3",  "Set Text"),
     ("4",  "Token Raid"),
     ("5",  "Show Config"),
     ("6",  "Reset Config"),
-    ("7",  "Export Config"),
-    ("8",  "Import Config"),
+    ("7",  "Clear Tokens"),
+    ("8",  "Show Tokens"),
     ("9",  "Check Token"),
-    ("10", "Show ID"),
+    ("10", "Set ID"),
     ("11", "Onliner"),
     ("12", "Voice Raper"),
     ("13", "Change Nick"),
@@ -165,7 +164,8 @@ def show_ui(cfg):
     for line in art_colored:
         print(center(line, w))
     print()
-    tokens = solid(f"<{cfg.get('tokens','0')}>", 255, 60, 60)
+    token_count = len(cfg.get("tokens", []))
+    tokens = solid(f"<{token_count}>", 255, 60, 60)
     status_left = solid("Loaded ", 180, 180, 180) + tokens + solid(" tokens", 180, 180, 180)
     nya_colored = [solid(l, 200, 50, 50) for l in NYA_ART]
     left_pad = max(0, (w - visible_len(status_left) - 20) // 2)
@@ -194,21 +194,18 @@ def wait(sec=1.2):
 
 
 def handle_result(r, title):
-    """แสดงผลลัพธ์จาก raid.py ให้สวยงาม"""
     if not isinstance(r, dict):
         info(str(r))
         return
     if r.get("status") == "error":
         error(r.get("message", "ผิดพลาด"))
         return
-    # แสดงสรุป
     parts = []
     for k in ("total", "success", "failed", "online", "invite", "guild", "name", "bio", "target"):
         if k in r and r[k] is not None:
             parts.append(f"{k}={r[k]}")
     if parts:
         success(" | ".join(parts))
-    # แสดงตัวอย่าง 5 รายการแรก
     for x in r.get("results", [])[:5]:
         if isinstance(x, dict):
             tk = x.get("token", "")
@@ -222,34 +219,29 @@ def handle_result(r, title):
 
 def main():
     cfg = raid.load_config()
-    file_path = cfg.get("file", "")
-    if file_path and os.path.exists(file_path):
-        count, err = raid.uploade_token(file_path)
-        if not err:
-            cfg = raid.load_config()
 
     while True:
         show_ui(cfg)
         choice = prompt("  > Choose : ").strip()
 
-        # ==================== [ 1 ] ====================
+        # ==================== [ 1 ] Add Token ====================
         if choice == "1":
             print()
-            print(solid("  --- [ 1 ] Uploade Token ---", 255, 60, 60))
-            v = prompt("  Choose File : ").strip()
+            print(solid("  --- [ 1 ] Add Token ---", 255, 60, 60))
+            print(solid("  (วาง token แล้วกด Enter / พิมพ์หลายตัวคั่นด้วย ,)", 150, 150, 150))
+            v = prompt("  Token : ").strip()
             if v:
-                count, err = raid.uploade_token(v)
-                if err:
-                    error(err)
+                added, total = raid.add_tokens_bulk(v)
+                if added > 0:
+                    success(f"เพิ่ม {added} token (รวม {total})")
                 else:
-                    success(f"โหลดแล้ว: {v}")
-                    info(f"พบ {count} token")
+                    error("ไม่เพิ่ม token ใหม่ (มีอยู่แล้ว)")
                 cfg = raid.load_config()
             else:
                 error("ไม่ได้กรอก")
             wait()
 
-        # ==================== [ 2 ] ====================
+        # ==================== [ 2 ] Set Name ====================
         elif choice == "2":
             print()
             print(solid("  --- [ 2 ] Set Name ---", 255, 60, 60))
@@ -262,7 +254,7 @@ def main():
                 error("ไม่ได้กรอก")
             wait()
 
-        # ==================== [ 3 ] ====================
+        # ==================== [ 3 ] Set Text ====================
         elif choice == "3":
             print()
             print(solid("  --- [ 3 ] Set Text ---", 255, 60, 60))
@@ -275,25 +267,28 @@ def main():
                 error("ไม่ได้กรอก")
             wait()
 
-        # ==================== [ 4 ] ====================
+        # ==================== [ 4 ] Token Raid ====================
         elif choice == "4":
             print()
             print(solid("  --- [ 4 ] Token Raid ---", 255, 60, 60))
-            v = prompt("  Guide ID (Channel ID) : ").strip()
+            v = prompt("  Channel ID : ").strip()
             r = raid.token_raid(v if v else None)
             handle_result(r, "Token Raid")
             wait(2)
 
-        # ==================== [ 5 ] ====================
+        # ==================== [ 5 ] Show Config ====================
         elif choice == "5":
             print()
             print(solid("  --- [ 5 ] Current Config ---", 255, 60, 60))
             for k, v in raid.show_config().items():
-                print(solid(f"  {k:<10}", 255, 100, 100) + solid(f": {v}", 220, 220, 220))
+                if k == "tokens":
+                    print(solid(f"  {k:<10}", 255, 100, 100) + solid(f": {len(v)} token", 220, 220, 220))
+                else:
+                    print(solid(f"  {k:<10}", 255, 100, 100) + solid(f": {v}", 220, 220, 220))
             print()
             prompt("  กด Enter...")
 
-        # ==================== [ 6 ] ====================
+        # ==================== [ 6 ] Reset Config ====================
         elif choice == "6":
             print()
             print(solid("  --- [ 6 ] Reset Config ---", 255, 60, 60))
@@ -302,55 +297,75 @@ def main():
             success("รีเซ็ต config แล้ว")
             wait()
 
-        # ==================== [ 7 ] ====================
+        # ==================== [ 7 ] Clear Tokens ====================
         elif choice == "7":
             print()
-            print(solid("  --- [ 7 ] Export Config ---", 255, 60, 60))
-            v = prompt("  Save as : ").strip()
+            print(solid("  --- [ 7 ] Clear Tokens ---", 255, 60, 60))
+            count = raid.count_tokens()
+            if count == 0:
+                info("ไม่มี token อยู่แล้ว")
+            else:
+                confirm = prompt(f"  ลบ token ทั้งหมด {count} ตัว? (y/n) : ").strip().lower()
+                if confirm == "y":
+                    raid.clear_tokens()
+                    cfg = raid.load_config()
+                    success("ลบ token ทั้งหมดแล้ว")
+                else:
+                    info("ยกเลิก")
+            wait()
+
+        # ==================== [ 8 ] Show Tokens ====================
+        elif choice == "8":
+            print()
+            print(solid("  --- [ 8 ] Show Tokens ---", 255, 60, 60))
+            tokens = raid.list_tokens()
+            if not tokens:
+                error("ไม่มี token")
+            else:
+                for i, t in enumerate(tokens, 1):
+                    masked = t[:15] + "..." + t[-10:] if len(t) > 30 else t
+                    print(solid(f"  {i:>3}. ", 255, 100, 100) + solid(masked, 200, 200, 200))
+                print()
+                info(f"รวม {len(tokens)} token")
+            print()
+            prompt("  กด Enter...")
+
+        # ==================== [ 9 ] Check Token ====================
+        elif choice == "9":
+            print()
+            print(solid("  --- [ 9 ] Check Token ---", 255, 60, 60))
+            tokens = raid.list_tokens()
+            if not tokens:
+                error("ไม่มี token")
+            else:
+                info(f"กำลังตรวจสอบ {len(tokens)} token...")
+                valid = 0
+                for t in tokens[:5]:
+                    ok, data = raid.check_token_valid(t)
+                    masked = t[:15] + "..." if len(t) > 15 else t
+                    if ok:
+                        valid += 1
+                        success(f"{masked} -> {data.get('username')}#{data.get('discriminator','0')}")
+                    else:
+                        error(f"{masked} -> {data}")
+                if len(tokens) > 5:
+                    info(f"... และอีก {len(tokens) - 5} token")
+            wait(2)
+
+        # ==================== [ 10 ] Set ID ====================
+        elif choice == "10":
+            print()
+            print(solid("  --- [ 10 ] Set ID ---", 255, 60, 60))
+            v = prompt("  ID : ").strip()
             if v:
-                try:
-                    raid.export_config(v)
-                    success(f"บันทึกเป็น: {v}")
-                except Exception as e:
-                    error(f"ผิดพลาด: {e}")
+                raid.set_id(v)
+                cfg = raid.load_config()
+                success(f"ID: {cfg['id']}")
             else:
                 error("ไม่ได้กรอก")
             wait()
 
-        # ==================== [ 8 ] ====================
-        elif choice == "8":
-            print()
-            print(solid("  --- [ 8 ] Import Config ---", 255, 60, 60))
-            v = prompt("  Load from : ").strip()
-            result, err = raid.import_config(v)
-            if err:
-                error(err)
-            else:
-                cfg = raid.load_config()
-                success(f"โหลดจาก: {v}")
-            wait()
-
-        # ==================== [ 9 ] ====================
-        elif choice == "9":
-            print()
-            print(solid("  --- [ 9 ] Check Token ---", 255, 60, 60))
-            count = raid.count_tokens()
-            if count == 0:
-                error("ไม่พบ token หรือไฟล์หาย")
-            else:
-                success(f"พบ {count} token")
-            cfg = raid.load_config()
-            wait(2)
-
-        # ==================== [ 10 ] ====================
-        elif choice == "10":
-            print()
-            print(solid("  --- [ 10 ] Show ID ---", 255, 60, 60))
-            print(solid(f"  Guide ID : {raid.show_id()}", 220, 220, 220))
-            print()
-            prompt("  กด Enter...")
-
-        # ==================== [ 11 ] Onliner ====================
+        # ==================== [ 11-20 ] ====================
         elif choice == "11":
             print()
             print(solid("  --- [ 11 ] Onliner ---", 255, 60, 60))
@@ -358,7 +373,6 @@ def main():
             handle_result(r, "Onliner")
             wait(2)
 
-        # ==================== [ 12 ] Voice Raper ====================
         elif choice == "12":
             print()
             print(solid("  --- [ 12 ] Voice Raper ---", 255, 60, 60))
@@ -366,7 +380,6 @@ def main():
             handle_result(r, "Voice Raper")
             wait(2)
 
-        # ==================== [ 13 ] Change Nick ====================
         elif choice == "13":
             print()
             print(solid("  --- [ 13 ] Change Nick ---", 255, 60, 60))
@@ -374,7 +387,6 @@ def main():
             handle_result(r, "Change Nick")
             wait(2)
 
-        # ==================== [ 14 ] Thread Spammer ====================
         elif choice == "14":
             print()
             print(solid("  --- [ 14 ] Thread Spammer ---", 255, 60, 60))
@@ -382,7 +394,6 @@ def main():
             handle_result(r, "Thread Spammer")
             wait(2)
 
-        # ==================== [ 15 ] Typer ====================
         elif choice == "15":
             print()
             print(solid("  --- [ 15 ] Typer ---", 255, 60, 60))
@@ -390,7 +401,6 @@ def main():
             handle_result(r, "Typer")
             wait(2)
 
-        # ==================== [ 16 ] Call Spammer ====================
         elif choice == "16":
             print()
             print(solid("  --- [ 16 ] Call Spammer ---", 255, 60, 60))
@@ -398,7 +408,6 @@ def main():
             handle_result(r, "Call Spammer")
             wait(2)
 
-        # ==================== [ 17 ] Bio Change ====================
         elif choice == "17":
             print()
             print(solid("  --- [ 17 ] Bio Change ---", 255, 60, 60))
@@ -406,7 +415,6 @@ def main():
             handle_result(r, "Bio Change")
             wait(2)
 
-        # ==================== [ 18 ] Voice Joiner ====================
         elif choice == "18":
             print()
             print(solid("  --- [ 18 ] Voice Joiner ---", 255, 60, 60))
@@ -414,7 +422,6 @@ def main():
             handle_result(r, "Voice Joiner")
             wait(2)
 
-        # ==================== [ 19 ] Onboard Bypass ====================
         elif choice == "19":
             print()
             print(solid("  --- [ 19 ] Onboard Bypass ---", 255, 60, 60))
@@ -422,7 +429,6 @@ def main():
             handle_result(r, "Onboard Bypass")
             wait(2)
 
-        # ==================== [ 20 ] Dm Spammer ====================
         elif choice == "20":
             print()
             print(solid("  --- [ 20 ] Dm Spammer ---", 255, 60, 60))
@@ -437,7 +443,6 @@ def main():
             wait(0.8)
             break
 
-        # ==================== Default ====================
         else:
             error("ยังไม่ได้ทำ หรือพิมพ์ผิด")
             wait()
